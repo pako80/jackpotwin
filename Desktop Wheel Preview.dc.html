@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body { margin: 0; background: #2b2b2b; }
+@keyframes jwHeadsUpBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }</style>
+<script type="module" src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.6.3/dist/dotlottie-wc.js"></script>
+</helmet>
+<div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: 32px; background: #2b2b2b; padding: 40px; box-sizing: border-box;">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" title="" dark="{{ true }}" leading-icon="{{ false }}" trailing-icon="{{ false }}" hint-size="393px,852px">
+    <div style="position: relative; width: 100%; height: 100%; background: #000; overflow: hidden;">
+      <sc-if value="{{ wheelVisible }}" hint-placeholder-val="{{ false }}">
+        <dc-import name="Wheel Overlay" hint-size="393px,852px" style="position: absolute; inset: 0;"></dc-import>
+      </sc-if>
+      <div style="position: absolute; left: 0; right: 0; bottom: 56px; z-index: 6; height: 50px; background: #1E1E1E; box-sizing: border-box; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; opacity: {{ headsUpOpacity }}; transition: opacity 200ms ease;">
+        <dotlottie-wc ref="{{ headsUpRef }}" src="skin/lottie/headsup.lottie" loop="false" style="width: 100%; height: 50px;"></dotlottie-wc>
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; padding-left: 16px; box-sizing: border-box;">
+          <span style="font-family: Inter, sans-serif; font-weight: 700; font-size: 14px; line-height: 1.4; color: #FAD749; animation: jwHeadsUpBlink 1400ms ease-in-out infinite;">You won a Jackpot! Hold on!</span>
+        </div>
+      </div>
+    </div>
+  </x-import>
+  <div style="width: 200px; display: flex; flex-direction: column; gap: 10px; background: #1E1E1E; border: 1px solid #3a3a3a; border-radius: 12px; padding: 16px; box-sizing: border-box;">
+    <span style="font-family: Inter, sans-serif; font-weight: 700; font-size: 13px; color: #FFFFFF; letter-spacing: 0.3px; text-transform: uppercase;">Skip to outcome</span>
+    <span style="font-family: Inter, sans-serif; font-size: 12px; color: #9a9a9a; line-height: 1.4; margin-bottom: 4px;">Jumps straight to that tier's win screen for design review.</span>
+    <sc-for list="{{ tiers }}" as="tier" hint-placeholder-count="5">
+      <button onClick="{{ tier.onClick }}" disabled="{{ tier.disabled }}" style="font-family: Inter, sans-serif; font-weight: 600; font-size: 14px; color: {{ tier.textColor }}; background: {{ tier.color }}; border: none; border-radius: 8px; padding: 10px 12px; cursor: pointer; text-align: left; transition: background 150ms ease-out; opacity: {{ tier.opacity }};">{{ tier.label }}</button>
+    </sc-for>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { pressed: null, headsUpVisible: true, wheelVisible: false };
+  headsUpRef = React.createRef();
+
+  componentDidMount() {
+    this.showHeadsUp();
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this._headsUpFallback);
+    this._stopHeadsUpDrive();
+  }
+
+  showHeadsUp = () => {
+    this.setState({ headsUpVisible: true });
+    clearTimeout(this._headsUpFallback);
+    this._headsUpFallback = setTimeout(() => {
+      this._stopHeadsUpDrive();
+      this.revealWheel();
+    }, 5000);
+    this._playAttach(0);
+  };
+
+  _playAttach = (tries) => {
+    const el = this.headsUpRef.current;
+    if (el && el.dotLottie && el.dotLottie.totalFrames > 0) {
+      try { el.dotLottie.setLoop(false); } catch (e) {}
+      try { el.dotLottie.pause(); } catch (e) {}
+      this._driveHeadsUp(el.dotLottie);
+      return;
+    }
+    if (tries > 40) return;
+    setTimeout(() => this._playAttach(tries + 1), 50);
+  };
+
+  _driveHeadsUp = (dl) => {
+    const total = dl.totalFrames || 150;
+    const durMs = (dl.duration || 5) * 1000;
+    const start = performance.now();
+    const tick = () => {
+      const elapsed = performance.now() - start;
+      const frame = Math.min(total - 1, Math.floor((elapsed / durMs) * total));
+      try { dl.setFrame(frame); } catch (e) {}
+      if (elapsed < durMs) this._headsUpRaf = requestAnimationFrame(tick);
+    };
+    this._headsUpRaf = requestAnimationFrame(tick);
+  };
+
+  _stopHeadsUpDrive = () => {
+    if (this._headsUpRaf) cancelAnimationFrame(this._headsUpRaf);
+    this._headsUpRaf = null;
+  };
+
+  revealWheel = () => {
+    clearTimeout(this._headsUpFallback);
+    this.setState({ headsUpVisible: false, wheelVisible: true });
+  };
+
+  jump(key) {
+    this.setState({ pressed: key });
+    if (!this.state.wheelVisible) this.revealWheel();
+    setTimeout(() => {
+      const wheel = window.__jwWheelInstance;
+      if (wheel && typeof wheel.jumpToTier === "function") {
+        wheel.jumpToTier(key);
+      }
+    }, this.state.wheelVisible ? 0 : 60);
+  }
+
+  renderVals() {
+    const defs = [
+      { key: "mega", label: "Mega Jackpot" },
+      { key: "major", label: "Major Jackpot" },
+      { key: "minor", label: "Minor Jackpot" },
+      { key: "mini", label: "Mini Jackpot" }
+    ];
+    const pressed = this.state.pressed;
+    return {
+      headsUpOpacity: this.state.headsUpVisible ? 1 : 0,
+      headsUpRef: this.headsUpRef,
+      wheelVisible: this.state.wheelVisible,
+      tiers: defs.map(d => ({
+        ...d,
+        color: d.key === pressed ? "#FAD749" : "#3a3a3a",
+        textColor: d.key === pressed ? "#000000" : "#FFFFFF",
+        disabled: false,
+        opacity: 1,
+        onClick: () => this.jump(d.key)
+      }))
+    };
+  }
+}
+
+</script>
+</body>
+</html>
